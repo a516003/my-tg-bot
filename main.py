@@ -1,40 +1,51 @@
+import os
 import requests
 import re
+from flask import Flask
+from threading import Thread
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
-# --- 填入你的 Token ---
-TOKEN = "8742671244:AAEr5mXXWIv1l6V6ul15i2tHi3inW965770" 
+# --- 1. 这里的网页部分是给 Koyeb 检查身体用的，不能删 ---
+app = Flask('')
+@app.route('/')
+def home():
+    return "Bot is running!"
 
-def get_usdt_rate():
+def run():
+    # Koyeb 默认使用 8080 端口
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+# --- 2. 机器人逻辑 ---
+TOKEN = "8742671244:AAEr5mXXWIv1l6V6ul15i2tHi3inW965770"
+
+def get_okx_rate():
     try:
-        # 使用 OKX 接口，比较稳定
         url = "https://okx.com"
         res = requests.get(url, timeout=5).json()
-        return float(res['data'][0]['last'])
+        return float(res['data'][0]['idxPrice'])
     except:
-        return 6.75 # 万一网络不通，给个大概的保底价
+        return 6.76
 
 async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text: return
     text = update.message.text.strip().upper()
-    
-    # 1. 查汇率：如果只发一个 Z
     if text == "Z":
-        rate = get_usdt_rate()
-        await update.message.reply_text(f"💰 实时汇率：1 U = {rate} CNY")
-        return
-
-    # 2. 计算：如果是数学算式 (100*12/6.7)
-    # 允许的字符：数字、加减乘除、小数点、括号
-    if re.match(r'^[0-9\+\-\*\/\.\(\) ]+$', text):
+        rate = get_okx_rate()
+        await update.message.reply_text(f"📊 欧意 C2C 参考价：\n1 USDT = {rate} CNY")
+    elif re.match(r'^[0-9\+\-\*\/\.\(\) ]+$', text):
         try:
-            result = eval(text)
-            await update.message.reply_text(f"🧮 计算结果：{round(result, 2)}")
-        except:
-            pass # 算式写错了不理它
+            res = eval(text)
+            await update.message.reply_text(f"🧮 计算结果：{round(res, 2)}")
+        except: pass
 
 if __name__ == '__main__':
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print("机器人已启动，现在可以在手机上给它发 Z 试试了！")
-    app.run_polling()
+    keep_alive()  # 启动防休眠网页
+    application = ApplicationBuilder().token(TOKEN).build()
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
+    print("Bot started...")
+    application.run_polling()
